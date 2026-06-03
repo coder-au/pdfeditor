@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser PDF Editor</title>
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    <!-- Fabric.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+    <!-- PDF-lib -->
+    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <div id="toolbar">
+            <div class="tool-group">
+                <button id="btn-select" class="active" title="Select">🖱️</button>
+                <button id="btn-draw" title="Draw">✏️</button>
+                <button id="btn-text" title="Text">T</button>
+                <button id="btn-image" title="Image">🖼️</button>
+                <input type="file" id="image-upload" accept="image/*" style="display: none;">
+            </div>
+            
+            <div class="tool-group options-group">
+                <input type="color" id="color-picker" value="#000000" title="Color">
+                <input type="range" id="brush-size" min="1" max="50" value="5" title="Brush Size">
+                <button id="btn-delete" title="Delete Selected">🗑️</button>
+            </div>
+
+            <div class="tool-group">
+                <button id="btn-undo" title="Undo (Ctrl+Z)">↶</button>
+                <button id="btn-redo" title="Redo (Ctrl+Y)">↷</button>
+            </div>
+
+            <div class="tool-group">
+                <button id="btn-prev-page" disabled>◀</button>
+                <span id="page-info">Page <span id="current-page">0</span> / <span id="total-pages">0</span></span>
+                <button id="btn-next-page" disabled>▶</button>
+            </div>
+
+            <div class="tool-group">
+                <button id="btn-download" title="Download PDF">💾 Download As..</button>
+            </div>
+        </div>
+
+        <div id="main-container">
+            <div id="drop-zone">
+                <p>Drag and drop a PDF file here, or click to select</p>
+                <input type="file" id="pdf-upload" accept="application/pdf" style="display: none;">
+            </div>
+            
+            <div id="canvas-container" style="display: none;">
+                <div id="canvas-wrapper">
+                    <canvas id="pdf-canvas"></canvas>
+                    <canvas id="fabric-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="loading-overlay" style="display: none;">
+            <div class="spinner"></div>
+            <p id="loading-text">Loading...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
