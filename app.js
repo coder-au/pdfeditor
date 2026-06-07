@@ -158,43 +158,54 @@ function renderPage(num) {
         renderTask.promise.then(function() {
             pageRendering = false;
             hideLoading();
-            
+
             if (pageNumPending !== null) {
-                renderPage(pageNumPending);
+                const pending = pageNumPending;
                 pageNumPending = null;
+                renderPage(pending);
+                return;
             }
 
-            // Clear fabric canvas and history for new page
             fabricCanvas.clear();
-            
-            // Set pdfCanvas as background image for native fabric zooming
+
             const bgImg = new fabric.Image(pdfCanvas);
-            fabricCanvas.setBackgroundImage(bgImg, fabricCanvas.renderAll.bind(fabricCanvas));
+
+            function finalizePageDisplay() {
+                document.getElementById('current-page').textContent = num;
+                updatePageControls();
+                canvasWrapper.style.transform = 'none';
+                canvasWrapper.style.left = '0px';
+                canvasWrapper.style.top = '0px';
+                lastTouchDistance = 0;
+                lastTouchCenter = null;
+                requestAnimationFrame(() => fitCanvasToView());
+            }
+
+            function applyBackground(done) {
+                fabricCanvas.setBackgroundImage(bgImg, () => {
+                    fabricCanvas.renderAll();
+                    done();
+                });
+            }
 
             if (pageStates[num]) {
-                // Restore state for this page
                 history = [...pageStates[num].history];
                 historyIndex = pageStates[num].historyIndex;
                 isHistoryAction = true;
-                fabricCanvas.loadFromJSON(pageStates[num].canvasJson, function() {
-                    fabricCanvas.setBackgroundImage(bgImg, fabricCanvas.renderAll.bind(fabricCanvas));
-                    isHistoryAction = false;
-                    fabricCanvas.renderAll();
+                fabricCanvas.loadFromJSON(pageStates[num].canvasJson, () => {
+                    applyBackground(() => {
+                        isHistoryAction = false;
+                        finalizePageDisplay();
+                    });
                 });
             } else {
-                // Initial state for new page
-                history = [];
-                historyIndex = -1;
-                saveHistory(); 
+                applyBackground(() => {
+                    history = [];
+                    historyIndex = -1;
+                    saveHistory();
+                    finalizePageDisplay();
+                });
             }
-
-            document.getElementById('current-page').textContent = num;
-            updatePageControls();
-            
-            canvasWrapper.style.transform = 'none';
-            canvasWrapper.style.left = '0px';
-            canvasWrapper.style.top = '0px';
-            fitCanvasToView();
         });
     });
 }
