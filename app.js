@@ -3,6 +3,7 @@ let pdfDoc = null;
 let pageNum = 1;
 let pageRendering = false;
 let pageNumPending = null;
+let currentRenderTask = null;
 let scale = 1.0;
 let fabricCanvas = null;
 let currentTool = 'select'; // select, draw, text, image
@@ -130,19 +131,21 @@ async function loadPdf(file) {
 }
 
 function renderPage(num) {
+    if (currentRenderTask) {
+        currentRenderTask.cancel();
+        currentRenderTask = null;
+    }
     pageRendering = true;
-    
+
     pdfDoc.getPage(num).then(function(page) {
-        // Use a standard scale for rendering the PDF to canvas
-        const viewport = page.getViewport({scale: 1.5}); // base scale
-        
+        const viewport = page.getViewport({scale: 1.5});
+
         pdfCanvas.height = viewport.height;
         pdfCanvas.width = viewport.width;
-        
+
         canvasWrapper.style.width = `${viewport.width}px`;
         canvasWrapper.style.height = `${viewport.height}px`;
 
-        // Update fabric canvas size
         fabricCanvas.setDimensions({
             width: viewport.width,
             height: viewport.height
@@ -152,12 +155,12 @@ function renderPage(num) {
             canvasContext: ctx,
             viewport: viewport
         };
-        
-        const renderTask = page.render(renderContext);
 
-        renderTask.promise.then(function() {
+        currentRenderTask = page.render(renderContext);
+
+        currentRenderTask.promise.then(function() {
+            currentRenderTask = null;
             pageRendering = false;
-            hideLoading();
 
             if (pageNumPending !== null) {
                 const pending = pageNumPending;
@@ -170,7 +173,8 @@ function renderPage(num) {
 
             const bgImg = new fabric.Image(pdfCanvas);
 
-            function finalizePageDisplay() {
+            function finishPage() {
+                fabricCanvas.setBackgroundImage(bgImg, fabricCanvas.renderAll.bind(fabricCanvas));
                 document.getElementById('current-page').textContent = num;
                 updatePageControls();
                 canvasWrapper.style.transform = 'none';
@@ -178,14 +182,8 @@ function renderPage(num) {
                 canvasWrapper.style.top = '0px';
                 lastTouchDistance = 0;
                 lastTouchCenter = null;
+                hideLoading();
                 requestAnimationFrame(() => fitCanvasToView());
-            }
-
-            function applyBackground(done) {
-                fabricCanvas.setBackgroundImage(bgImg, () => {
-                    fabricCanvas.renderAll();
-                    done();
-                });
             }
 
             if (pageStates[num]) {
@@ -193,20 +191,27 @@ function renderPage(num) {
                 historyIndex = pageStates[num].historyIndex;
                 isHistoryAction = true;
                 fabricCanvas.loadFromJSON(pageStates[num].canvasJson, () => {
-                    applyBackground(() => {
-                        isHistoryAction = false;
-                        finalizePageDisplay();
-                    });
+                    isHistoryAction = false;
+                    finishPage();
                 });
             } else {
-                applyBackground(() => {
-                    history = [];
-                    historyIndex = -1;
-                    saveHistory();
-                    finalizePageDisplay();
-                });
+                history = [];
+                historyIndex = -1;
+                finishPage();
+                saveHistory();
+            }
+        }).catch(function(err) {
+            currentRenderTask = null;
+            pageRendering = false;
+            if (err && err.name !== 'RenderingCancelledException') {
+                console.error('Error rendering page:', err);
+                hideLoading();
             }
         });
+    }).catch(function(err) {
+        pageRendering = false;
+        console.error('Error loading page:', err);
+        hideLoading();
     });
 }
 
