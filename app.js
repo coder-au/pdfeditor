@@ -20,6 +20,10 @@ let isPanning = false;
 let lastPosX = 0;
 let lastPosY = 0;
 
+// Touch gesture variables
+let lastTouchDistance = 0;
+let lastTouchCenter = null;
+
 // DOM Elements
 const dropZone = document.getElementById('drop-zone');
 const pdfUpload = document.getElementById('pdf-upload');
@@ -35,6 +39,11 @@ function init() {
     setupDragAndDrop();
     setupToolbar();
     setupKeyboardShortcuts();
+    window.addEventListener('resize', () => {
+        if (pdfDoc && fabricCanvas) {
+            fitCanvasToView();
+        }
+    });
 }
 
 function showLoading(text) {
@@ -182,13 +191,33 @@ function renderPage(num) {
             document.getElementById('current-page').textContent = num;
             updatePageControls();
             
-            // Reset wrapper transform (if any was left) and reset viewport
             canvasWrapper.style.transform = 'none';
             canvasWrapper.style.left = '0px';
             canvasWrapper.style.top = '0px';
-            fabricCanvas.setViewportTransform([1,0,0,1,0,0]);
+            fitCanvasToView();
         });
     });
+}
+
+function fitCanvasToView() {
+    if (!fabricCanvas || !pdfDoc) return;
+
+    const container = document.getElementById('canvas-container');
+    const canvasW = fabricCanvas.getWidth();
+    const canvasH = fabricCanvas.getHeight();
+    const padding = 16;
+    const availW = container.clientWidth - padding;
+    const availH = container.clientHeight - padding;
+
+    const scaleX = availW / canvasW;
+    const scaleY = availH / canvasH;
+    const fitZoom = Math.min(scaleX, scaleY, 1);
+
+    const offsetX = (availW - canvasW * fitZoom) / 2 + padding / 2;
+    const offsetY = (availH - canvasH * fitZoom) / 2 + padding / 2;
+
+    fabricCanvas.setViewportTransform([fitZoom, 0, 0, fitZoom, offsetX, offsetY]);
+    fabricCanvas.requestRenderAll();
 }
 
 function queueRenderPage(num) {
@@ -423,6 +452,65 @@ function setupZoomAndPan() {
 
     // Prevent context menu on right click in container
     container.addEventListener('contextmenu', e => e.preventDefault());
+
+    setupTouchGestures(container);
+}
+
+function getTouchDistance(t1, t2) {
+    return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+}
+
+function getTouchCenter(t1, t2) {
+    return {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2
+    };
+}
+
+function setupTouchGestures(container) {
+    container.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            lastTouchDistance = getTouchDistance(e.touches[0], e.touches[1]);
+            lastTouchCenter = getTouchCenter(e.touches[0], e.touches[1]);
+        }
+    }, { passive: false });
+
+    container.addEventListener('touchmove', (e) => {
+        if (e.touches.length !== 2 || !pdfDoc) return;
+        e.preventDefault();
+
+        const dist = getTouchDistance(e.touches[0], e.touches[1]);
+        const center = getTouchCenter(e.touches[0], e.touches[1]);
+        const rect = container.getBoundingClientRect();
+        const pointer = {
+            x: center.x - rect.left,
+            y: center.y - rect.top
+        };
+
+        if (lastTouchDistance > 0) {
+            let zoom = fabricCanvas.getZoom() * (dist / lastTouchDistance);
+            if (zoom > 5) zoom = 5;
+            if (zoom < 0.2) zoom = 0.2;
+            fabricCanvas.zoomToPoint(pointer, zoom);
+        }
+
+        if (lastTouchCenter) {
+            const vpt = fabricCanvas.viewportTransform;
+            vpt[4] += center.x - lastTouchCenter.x;
+            vpt[5] += center.y - lastTouchCenter.y;
+            fabricCanvas.setViewportTransform(vpt);
+        }
+
+        lastTouchDistance = dist;
+        lastTouchCenter = center;
+        fabricCanvas.requestRenderAll();
+    }, { passive: false });
+
+    container.addEventListener('touchend', () => {
+        lastTouchDistance = 0;
+        lastTouchCenter = null;
+    });
 }
 
 
