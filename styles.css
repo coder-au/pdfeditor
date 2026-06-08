@@ -129,17 +129,15 @@ button:disabled {
     height: 100%;
     overflow: hidden;
     position: relative;
-    display: flex;
-    justify-content: center;
-    align-items: center;
     touch-action: none;
 }
 
 #canvas-wrapper {
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
     box-shadow: 0 0 10px rgba(0,0,0,0.3);
     background: white;
-    transform-origin: top left;
 }
 
 #pdf-canvas {

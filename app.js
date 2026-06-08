@@ -25,6 +25,10 @@ let lastPosY = 0;
 let lastTouchDistance = 0;
 let lastTouchCenter = null;
 
+// PDF page render size (fabric viewport uses separate editor dimensions)
+let pagePdfSize = { width: 0, height: 0 };
+const VIEWPORT_PADDING = 16;
+
 // DOM Elements
 const dropZone = document.getElementById('drop-zone');
 const pdfUpload = document.getElementById('pdf-upload');
@@ -40,11 +44,38 @@ function init() {
     setupDragAndDrop();
     setupToolbar();
     setupKeyboardShortcuts();
-    window.addEventListener('resize', () => {
+    setupViewportResize();
+}
+
+function getEditorViewport() {
+    return {
+        width: Math.max(canvasContainer.clientWidth, 1),
+        height: Math.max(canvasContainer.clientHeight, 1),
+        padding: VIEWPORT_PADDING
+    };
+}
+
+function syncViewportSize() {
+    const { width, height } = getEditorViewport();
+    canvasWrapper.style.width = `${width}px`;
+    canvasWrapper.style.height = `${height}px`;
+    if (fabricCanvas) {
+        fabricCanvas.setDimensions({ width, height });
+    }
+}
+
+function setupViewportResize() {
+    const resize = () => {
         if (pdfDoc && fabricCanvas) {
+            syncViewportSize();
             fitCanvasToView();
         }
-    });
+    };
+    window.addEventListener('resize', resize);
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(resize);
+        observer.observe(canvasContainer);
+    }
 }
 
 function showLoading(text) {
@@ -95,7 +126,7 @@ let currentPdfBytes = null;
 async function loadPdf(file) {
     showLoading('Loading PDF...');
     dropZone.style.display = 'none';
-    canvasContainer.style.display = 'flex';
+    canvasContainer.style.display = 'block';
 
     try {
         const fileReader = new FileReader();
@@ -140,16 +171,10 @@ function renderPage(num) {
     pdfDoc.getPage(num).then(function(page) {
         const viewport = page.getViewport({scale: 1.5});
 
+        pagePdfSize = { width: viewport.width, height: viewport.height };
         pdfCanvas.height = viewport.height;
         pdfCanvas.width = viewport.width;
-
-        canvasWrapper.style.width = `${viewport.width}px`;
-        canvasWrapper.style.height = `${viewport.height}px`;
-
-        fabricCanvas.setDimensions({
-            width: viewport.width,
-            height: viewport.height
-        });
+        syncViewportSize();
 
         const renderContext = {
             canvasContext: ctx,
@@ -177,9 +202,6 @@ function renderPage(num) {
                 fabricCanvas.setBackgroundImage(bgImg, fabricCanvas.renderAll.bind(fabricCanvas));
                 document.getElementById('current-page').textContent = num;
                 updatePageControls();
-                canvasWrapper.style.transform = 'none';
-                canvasWrapper.style.left = '0px';
-                canvasWrapper.style.top = '0px';
                 lastTouchDistance = 0;
                 lastTouchCenter = null;
                 hideLoading();
@@ -216,21 +238,19 @@ function renderPage(num) {
 }
 
 function fitCanvasToView() {
-    if (!fabricCanvas || !pdfDoc) return;
+    if (!fabricCanvas || !pdfDoc || !pagePdfSize.width) return;
 
-    const container = document.getElementById('canvas-container');
-    const canvasW = fabricCanvas.getWidth();
-    const canvasH = fabricCanvas.getHeight();
-    const padding = 16;
-    const availW = container.clientWidth - padding;
-    const availH = container.clientHeight - padding;
+    syncViewportSize();
 
-    const scaleX = availW / canvasW;
-    const scaleY = availH / canvasH;
-    const fitZoom = Math.min(scaleX, scaleY, 1);
+    const { width: viewW, height: viewH, padding } = getEditorViewport();
+    const pdfW = pagePdfSize.width;
+    const pdfH = pagePdfSize.height;
+    const innerW = viewW - padding;
+    const innerH = viewH - padding;
 
-    const offsetX = (availW - canvasW * fitZoom) / 2 + padding / 2;
-    const offsetY = (availH - canvasH * fitZoom) / 2 + padding / 2;
+    const fitZoom = Math.min(innerW / pdfW, innerH / pdfH, 1);
+    const offsetX = (viewW - pdfW * fitZoom) / 2;
+    const offsetY = (viewH - pdfH * fitZoom) / 2;
 
     fabricCanvas.setViewportTransform([fitZoom, 0, 0, fitZoom, offsetX, offsetY]);
     fabricCanvas.requestRenderAll();
@@ -294,8 +314,8 @@ function saveCurrentPageState() {
         canvasJson: JSON.stringify(fabricCanvas.toDatalessJSON()),
         history: [...history],
         historyIndex: historyIndex,
-        width: fabricCanvas.getWidth(),
-        height: fabricCanvas.getHeight()
+        width: pagePdfSize.width,
+        height: pagePdfSize.height
     };
 
     // Restore viewport and background
