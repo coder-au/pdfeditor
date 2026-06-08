@@ -64,17 +64,53 @@ function syncViewportSize() {
     }
 }
 
+function scheduleFitCanvasToView() {
+    const attempt = (tries = 0) => {
+        syncViewportSize();
+        const { width, height } = getEditorViewport();
+        if (width > 10 && height > 10) {
+            fitCanvasToView();
+        } else if (tries < 12) {
+            requestAnimationFrame(() => attempt(tries + 1));
+        }
+    };
+    requestAnimationFrame(() => attempt());
+}
+
+function createPdfBackgroundImage() {
+    const bgImg = new fabric.Image(pdfCanvas, {
+        left: 0,
+        top: 0,
+        originX: 'left',
+        originY: 'top',
+        selectable: false,
+        evented: false
+    });
+    bgImg.set({
+        width: pagePdfSize.width,
+        height: pagePdfSize.height
+    });
+    return bgImg;
+}
+
+function setPdfBackground(bgImg, callback) {
+    fabricCanvas.setBackgroundImage(bgImg, callback, {
+        originX: 'left',
+        originY: 'top'
+    });
+}
+
 function setupViewportResize() {
     const resize = () => {
         if (pdfDoc && fabricCanvas) {
-            syncViewportSize();
-            fitCanvasToView();
+            scheduleFitCanvasToView();
         }
     };
     window.addEventListener('resize', resize);
     if (typeof ResizeObserver !== 'undefined') {
         const observer = new ResizeObserver(resize);
         observer.observe(canvasContainer);
+        observer.observe(document.getElementById('toolbar'));
     }
 }
 
@@ -127,6 +163,7 @@ async function loadPdf(file) {
     showLoading('Loading PDF...');
     dropZone.style.display = 'none';
     canvasContainer.style.display = 'block';
+    void canvasContainer.offsetHeight;
 
     try {
         const fileReader = new FileReader();
@@ -145,7 +182,8 @@ async function loadPdf(file) {
                 fabricCanvas = new fabric.Canvas('fabric-canvas', {
                     isDrawingMode: false,
                     fireRightClick: true,
-                    stopContextMenu: true
+                    stopContextMenu: true,
+                    backgroundVpt: true
                 });
                 setupFabricCanvas();
                 setupZoomAndPan();
@@ -196,16 +234,18 @@ function renderPage(num) {
 
             fabricCanvas.clear();
 
-            const bgImg = new fabric.Image(pdfCanvas);
+            const bgImg = createPdfBackgroundImage();
 
             function finishPage() {
-                fabricCanvas.setBackgroundImage(bgImg, fabricCanvas.renderAll.bind(fabricCanvas));
-                document.getElementById('current-page').textContent = num;
-                updatePageControls();
-                lastTouchDistance = 0;
-                lastTouchCenter = null;
-                hideLoading();
-                requestAnimationFrame(() => fitCanvasToView());
+                setPdfBackground(bgImg, () => {
+                    fabricCanvas.renderAll();
+                    document.getElementById('current-page').textContent = num;
+                    updatePageControls();
+                    lastTouchDistance = 0;
+                    lastTouchCenter = null;
+                    hideLoading();
+                    scheduleFitCanvasToView();
+                });
             }
 
             if (pageStates[num]) {
@@ -240,17 +280,19 @@ function renderPage(num) {
 function fitCanvasToView() {
     if (!fabricCanvas || !pdfDoc || !pagePdfSize.width) return;
 
-    syncViewportSize();
-
     const { width: viewW, height: viewH, padding } = getEditorViewport();
+    if (viewW <= 10 || viewH <= 10) return;
+
     const pdfW = pagePdfSize.width;
     const pdfH = pagePdfSize.height;
     const innerW = viewW - padding;
     const innerH = viewH - padding;
 
     const fitZoom = Math.min(innerW / pdfW, innerH / pdfH, 1);
-    const offsetX = (viewW - pdfW * fitZoom) / 2;
-    const offsetY = (viewH - pdfH * fitZoom) / 2;
+    const scaledW = pdfW * fitZoom;
+    const scaledH = pdfH * fitZoom;
+    const offsetX = (viewW - scaledW) / 2;
+    const offsetY = (viewH - scaledH) / 2;
 
     fabricCanvas.setViewportTransform([fitZoom, 0, 0, fitZoom, offsetX, offsetY]);
     fabricCanvas.requestRenderAll();
